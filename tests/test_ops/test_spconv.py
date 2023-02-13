@@ -148,8 +148,8 @@ def test_indice_conv_bp():
     from mmcv.utils import ext_loader
     ext_module = ext_loader.load_ext('_ext',['indice_conv_backward'])
 
-    indice_pairs_num = [[[0,-1],
-                         [0,-1]],
+    indice_pairs_num = [[[0,1],
+                         [0,1]],
                         [[0,1],
                          [0,1]],
                         [[0,-1],
@@ -158,7 +158,7 @@ def test_indice_conv_bp():
     filters = torch.tensor(np.ones((3,1,1,10,10))).mlu().float()
     outgrad = torch.tensor(np.ones((2,10))).mlu().float()
     indice_pairs = torch.tensor(indice_pairs_num).mlu().int()
-    indice_num = torch.tensor([1,2,1]).mlu().int()
+    indice_num = torch.tensor([2,2,1]).mlu().int()
     inverse = 0
     sub_m = 1
 
@@ -172,5 +172,6 @@ def test_indice_conv_bp():
                 int(inverse),
                 int(sub_m))
     print(ingrad)
+    print(filter_grad)
 
 test_indice_conv_bp()

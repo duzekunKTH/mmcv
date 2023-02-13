@@ -77,57 +77,6 @@ std::vector<torch::Tensor> IndiceConvBackwardMLUKernelLauncher(
     std::cout << "indice_num-" << i << " " << indice_num[i] << std::endl;
 	}
 	
-	auto input_grad_contiguous = torch_mlu::cnnl::ops::cnnl_contiguous(
-      features, features.suggest_memory_format());
-  auto output_grad_contiguous = torch_mlu::cnnl::ops::cnnl_contiguous(
-      outGrad, outGrad.suggest_memory_format());
-  auto filters_contiguous = torch_mlu::cnnl::ops::cnnl_contiguous(
-      filters, filters.suggest_memory_format());
-  auto indice_pairs_contiguous = torch_mlu::cnnl::ops::cnnl_contiguous(
-      indicePairs, indicePairs.suggest_memory_format());
-
-  MluOpTensorDescriptor output_grad_desc, filters_desc, indice_pairs_desc, input_grad_desc;
-  input_grad_desc.set(input_grad_contiguous);
-  output_grad_desc.set(output_grad_contiguous);
-  filters_desc.set(filters_contiguous);
-  indice_pairs_desc.set(indice_pairs_contiguous);
-
-  // need to set desc layout with mluOp functions
-  {
-    mluOpTensorLayout_t layout;
-    mluOpDataType_t dtype;
-    int dim;
-    int dims[8];
-
-    // output_grad_desc
-    mluOpGetTensorDescriptor(output_grad_desc.desc(), &layout, &dtype, &dim, dims);
-    mluOpSetTensorDescriptor(output_grad_desc.desc(), MLUOP_LAYOUT_ARRAY, dtype, dim, dims);
-
-    // filters_desc
-    mluOpGetTensorDescriptor(filters_desc.desc(), &layout, &dtype, &dim, dims);
-    if (dim == 4) {
-      mluOpSetTensorDescriptor(filters_desc.desc(), MLUOP_LAYOUT_HWCN, dtype, dim, dims);
-    } else {
-      mluOpSetTensorDescriptor(filters_desc.desc(), MLUOP_LAYOUT_ARRAY, dtype, dim, dims);
-    }
-
-    // indice_pairs_desc
-    mluOpGetTensorDescriptor(indice_pairs_desc.desc(), &layout, &dtype, &dim, dims);
-    mluOpSetTensorDescriptor(indice_pairs_desc.desc(), MLUOP_LAYOUT_ARRAY, dtype, dim, dims);
-
-    // input_grad_desc
-    mluOpGetTensorDescriptor(input_grad_desc.desc(), &layout, &dtype, &dim, dims);
-    mluOpSetTensorDescriptor(input_grad_desc.desc(), MLUOP_LAYOUT_ARRAY, dtype, dim, dims);
-  }
-
-  auto handle = mluOpGetCurrentHandle();
-	size_t workspace_size = 0;
-  mluOpGetIndiceConvolutionBackwardDataWorkspaceSize(
-			handle, output_grad_desc.desc(), filters_desc.desc(),
-      indice_pairs_desc.desc(), input_grad_desc.desc(),
-      indice_num, _inverse, &workspace_size);
-	printf("mluOpGetIndiceConvolutionBackwardDataWorkspaceSize %ld\n", workspace_size);
-  
 	// generate empty input_grad
 	torch::Tensor input_grad = at::zeros({features.size(0), features.size(1)}, features.options().dtype(at::kFloat));
 	torch::Tensor filters_grad;
@@ -146,25 +95,105 @@ std::vector<torch::Tensor> IndiceConvBackwardMLUKernelLauncher(
 		filters_grad = at::zeros({d, h, w, c, n}, filters.options().dtype(at::kFloat));
 	}
 
-  auto indice_convbpdata_workspace = at::empty(workspace_size, features.options().dtype(at::kByte));
+  auto features_contiguous = torch_mlu::cnnl::ops::cnnl_contiguous(
+      features, at::MemoryFormat::Contiguous);
+  auto filters_contiguous = torch_mlu::cnnl::ops::cnnl_contiguous(
+      filters, at::MemoryFormat::Contiguous);
+  auto output_grad_contiguous = torch_mlu::cnnl::ops::cnnl_contiguous(
+      outGrad, at::MemoryFormat::Contiguous);
+  auto indice_pairs_contiguous = torch_mlu::cnnl::ops::cnnl_contiguous(
+      indicePairs, at::MemoryFormat::Contiguous);
+	auto input_grad_contiguous = torch_mlu::cnnl::ops::cnnl_contiguous(
+      features, at::MemoryFormat::Contiguous);
+	auto filters_grad_contiguous = torch_mlu::cnnl::ops::cnnl_contiguous(
+      filters, at::MemoryFormat::Contiguous);
 
-	auto output_grad_impl = torch_mlu::getMluTensorImpl(output_grad_contiguous);
+  MluOpTensorDescriptor features_desc, output_grad_desc, filters_desc, indice_pairs_desc, input_grad_desc, filters_grad_desc;
+  features_desc.set(features_contiguous);
+  filters_desc.set(filters_contiguous);
+  output_grad_desc.set(output_grad_contiguous);
+  indice_pairs_desc.set(indice_pairs_contiguous);
+  input_grad_desc.set(input_grad_contiguous);
+  filters_grad_desc.set(filters_grad_contiguous);
+
+  // need to set desc layout with mluOp functions
+  {
+    mluOpTensorLayout_t layout;
+    mluOpDataType_t dtype;
+    int dim;
+    int dims[8];
+
+    // features_desc
+    mluOpGetTensorDescriptor(features_desc.desc(), &layout, &dtype, &dim, dims);
+    mluOpSetTensorDescriptor(features_desc.desc(), MLUOP_LAYOUT_ARRAY, dtype, dim, dims);
+
+    // filters_desc
+    mluOpGetTensorDescriptor(filters_desc.desc(), &layout, &dtype, &dim, dims);
+    if (dim == 4) {
+      mluOpSetTensorDescriptor(filters_desc.desc(), MLUOP_LAYOUT_HWCN, dtype, dim, dims);
+    } else {
+      mluOpSetTensorDescriptor(filters_desc.desc(), MLUOP_LAYOUT_ARRAY, dtype, dim, dims);
+    }
+
+    // output_grad_desc
+    mluOpGetTensorDescriptor(output_grad_desc.desc(), &layout, &dtype, &dim, dims);
+    mluOpSetTensorDescriptor(output_grad_desc.desc(), MLUOP_LAYOUT_ARRAY, dtype, dim, dims);
+
+    // indice_pairs_desc
+    mluOpGetTensorDescriptor(indice_pairs_desc.desc(), &layout, &dtype, &dim, dims);
+    mluOpSetTensorDescriptor(indice_pairs_desc.desc(), MLUOP_LAYOUT_ARRAY, dtype, dim, dims);
+
+    // input_grad_desc
+    mluOpGetTensorDescriptor(input_grad_desc.desc(), &layout, &dtype, &dim, dims);
+    mluOpSetTensorDescriptor(input_grad_desc.desc(), MLUOP_LAYOUT_ARRAY, dtype, dim, dims);
+  }
+
+  auto handle = mluOpGetCurrentHandle();
+	size_t data_workspace_size = 0;
+  mluOpGetIndiceConvolutionBackwardDataWorkspaceSize(
+			handle, output_grad_desc.desc(), filters_desc.desc(),
+      indice_pairs_desc.desc(), input_grad_desc.desc(),
+      indice_num, _inverse, &data_workspace_size);
+
+	size_t filters_workspace_size = 0;
+  mluOpGetIndiceConvolutionBackwardFilterWorkspaceSize(
+    handle, features_desc.desc(), output_grad_desc.desc(), indice_pairs_desc.desc(),
+    filters_grad_desc.desc(), indice_num,
+    _inverse, _subM, &filters_workspace_size);
+
+  auto indice_convbpdata_workspace = at::empty(data_workspace_size, features.options().dtype(at::kByte));
+  auto indice_convbpfilter_workspace = at::empty(filters_workspace_size, filters.options().dtype(at::kByte));
+
+	auto features_impl = torch_mlu::getMluTensorImpl(features_contiguous);
 	auto filters_impl = torch_mlu::getMluTensorImpl(filters_contiguous);
+	auto output_grad_impl = torch_mlu::getMluTensorImpl(output_grad_contiguous);
 	auto indice_pairs_impl = torch_mlu::getMluTensorImpl(indice_pairs_contiguous);
   auto indice_convbpdata_workspace_impl = torch_mlu::getMluTensorImpl(indice_convbpdata_workspace);
+  auto indice_convbpfilter_workspace_impl = torch_mlu::getMluTensorImpl(indice_convbpfilter_workspace);
 
-	auto output_grad_ptr = output_grad_impl->cnnlMalloc();
+	auto features_ptr = features_impl->cnnlMalloc();
 	auto filters_ptr = filters_impl->cnnlMalloc();
+	auto output_grad_ptr = output_grad_impl->cnnlMalloc();
 	auto indice_pairs_ptr = indice_pairs_impl->cnnlMalloc();
   auto indice_convbpdata_workspace_ptr = indice_convbpdata_workspace_impl->cnnlMalloc();
+  auto indice_convbpfilter_workspace_ptr = indice_convbpfilter_workspace_impl->cnnlMalloc();
 
+  // outputs
 	auto input_grad_impl = torch_mlu::getMluTensorImpl(input_grad);
 	auto input_grad_ptr = input_grad_impl->cnnlMalloc();
+	auto filters_grad_impl = torch_mlu::getMluTensorImpl(filters_grad);
+	auto filters_grad_ptr = filters_grad_impl->cnnlMalloc();
 
 	mluOpIndiceConvolutionBackwardData(
 			handle, output_grad_desc.desc(), output_grad_ptr, filters_desc.desc(), filters_ptr,
       indice_pairs_desc.desc(), indice_pairs_ptr, indice_num, _inverse, _subM,
-      indice_convbpdata_workspace_ptr, workspace_size, input_grad_desc.desc(), input_grad_ptr);
+      indice_convbpdata_workspace_ptr, data_workspace_size, input_grad_desc.desc(), input_grad_ptr);
+
+  mluOpIndiceConvolutionBackwardFilter(
+    handle, features_desc.desc(), features_ptr, output_grad_desc.desc(), output_grad_ptr,
+    indice_pairs_desc.desc(), indice_pairs_ptr, indice_num, _inverse, _subM,
+    indice_convbpfilter_workspace_ptr, filters_workspace_size,
+    filters_grad_desc.desc(), filters_grad_ptr);
 
 	std::vector<torch::Tensor> result;
 	result.push_back(input_grad);
