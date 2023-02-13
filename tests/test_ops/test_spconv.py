@@ -154,9 +154,9 @@ def test_indice_conv_bp():
                          [0,1]],
                         [[0,-1],
                          [0,-1]]]
-    feature = torch.tensor(np.ones((10,10))).mlu().float()
+    feature = torch.tensor(np.ones((2,10))).mlu().float()
     filters = torch.tensor(np.ones((3,1,1,10,10))).mlu().float()
-    outgrad = torch.tensor(np.ones((10,10))).mlu().float()
+    outgrad = torch.tensor(np.ones((2,10))).mlu().float()
     indice_pairs = torch.tensor(indice_pairs_num).mlu().int()
     indice_num = torch.tensor([1,2,1]).mlu().int()
     inverse = 0
@@ -171,5 +171,6 @@ def test_indice_conv_bp():
                 indice_num,
                 int(inverse),
                 int(sub_m))
+    print(ingrad)
 
 test_indice_conv_bp()
