@@ -174,4 +174,43 @@ def test_indice_conv_bp():
     print(ingrad)
     print(filter_grad)
 
+def test_indice_conv():
+    import numpy as np
+    from mmcv.utils import ext_loader
+    ext_module = ext_loader.load_ext('_ext', ['indice_conv_forward'])
+
+    indice_pairs_num = [[[1,0],
+                         [0,7]],
+                        [[0,-1],
+                         [6,-1]],
+                        [[0,-1],
+                         [4,-1]],
+                        [[0,-1],
+                         [3,-1]],
+                        [[0,-1],
+                         [2,-1]],
+                        [[0,-1],
+                         [1,-1]],
+                        [[0,-1],
+                         [0,-1]]]
+    features = torch.tensor(np.ones((2,7)), dtype=torch.float).mlu()
+    filters = torch.tensor(np.ones((2,2,2,7,9)), dtype=torch.float).mlu()
+    indice_pairs = torch.tensor(indice_pairs_num, dtype=torch.int32).mlu()
+    indice_num = torch.tensor([2,1,1,1,1,1,1,1], dtype=torch.int32).mlu()
+    numactout = 8
+    inverse = 0
+    sub_m = 1
+
+    print(indice_num)
+    output = ext_module.indice_conv_forward(
+        features,
+        filters,
+        indice_pairs,
+        indice_num,
+        numactout,
+        int(inverse),
+        int(sub_m))
+    print(output)
+
 test_indice_conv_bp()
+test_indice_conv()

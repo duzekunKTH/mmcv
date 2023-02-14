@@ -53,9 +53,89 @@ torch::Tensor IndiceConvForwardMLUKernelLauncher(
     torch::Tensor indiceNum, int64_t numActOut, int64_t _inverse,
     int64_t _subM) {
   std::cout << "IndiceConvForwardMLUKernelLauncher start." << std::endl;
+  auto indice_num_cpu = indiceNum.to({torch::kcpu});
+  auto indice_num_cpu_64 = indice_num_cpu.data_ptr<int>();
+  int indice_num_len = indiceNum.numel();
+  for (int i = 0; i < indice_num_len; ++i) {
+    indice_num[i] = (int64_t)(((int *)indice_num_cpu_64)[i]);
+    std::cout << "indice_num_cpu_64-" << i << " "
+	      << ((int *)(indice_num_cpu_64))[i] << std::endl;
+    std::cout << "indice_num-" << i << " " << indice_num[i] << std::endl;
+  }
+
+  // generate empty output
   int C = filters.dim() == 4 ? filters.size(3) : filters.size(4);
   torch::Tensor output =
       at::zeros({numActOut, C}, features.options().dtype(at::kFloat));
+
+  // generate descriptor
+  auto features_contiguous = torch_mlu::cnnl::ops::cnnl_contiguous(
+      features, at::MemoryFormat::Contiguous);
+  auto filters_contiguous = torch_mlu::cnnl::ops::cnnl_contiguous(
+      filters, at::MemoryFormat::Contiguous);
+  auto indice_pairs_contiguous = torch_mlu::cnnl::ops::cnnl_contiguous(
+      indicePairs, at::MemoryFormat::Contiguous);
+  auto output_contiguous = torch_mlu::cnnl::ops::cnnl_contiguous(
+      output, at::MemoryFormat::Contiguous);
+
+  MluOpTensorDescriptor features_desc, filters_desc, indice_pairs_desc,
+      output_desc;
+  features_desc.set(features_contiguous);
+  filters_desc.set(filters_contiguous);
+  indice_pairs_desc.set(indice_pairs_contiguous);
+  output_desc.set(output_contiguous);
+
+  // set layout
+  {
+    mluOpTensorLayout_t layout;
+    mluOpDataType_t dtype;
+    int dim;
+    int dims[8];
+
+    // features_desc
+    mluOpGetTensorDescriptor(features_desc.desc(), &layout, &dtype, &dim, dims);
+    mluOpSetTensorDescriptor(features_desc.desc(), MLUOP_LAYOUT_ARRAY, dtype, dim, dims);
+
+    // filters_desc
+    mluOpGetTensorDescriptor(filters_desc.desc(), &layout, &dtype, &dim, dims);
+    mluOpSetTensorDescriptor(filters_desc.desc(), MLUOP_LAYOUT_ARRAY, dtype, dim, dims);
+
+    // indice_pairs_desc
+    mluOpGetTensorDescriptor(indice_pairs_desc.desc(), &layout, &dtype, &dim, dims);
+    mluOpSetTensorDescriptor(indice_pairs_desc.desc(), MLUOP_LAYOUT_ARRAY, dtype, dim, dims);
+
+    // output_desc
+    mluOpGetTensorDescriptor(output_desc.desc(), &layout, &dtype, &dim, dims);
+    mluOpSetTensorDescriptor(output_desc.desc(), MLUOP_LAYOUT_ARRAY, dtype, dim, dims);
+  }
+
+  auto handle = mluOpGetCurrentHandle();
+  size_t workspace_size = 0;
+  mluOpGetIndiceConvolutionForwardWorkspaceSize(
+      handle, features_desc(), filters_desc(), indice_pairs_desc.desc(),
+      output_desc.desc(), indice_num, indice_num, inverse,
+      &workspace_size);
+
+  auto workspace =
+      at::empty(workspace_size, features.option().dtype(at::kByte));
+
+  auto features_impl = torch_mlu::getMluTensorImpl(features_contiguous);
+  auto filters_impl = torch_mlu::getMluTensorImpl(filters_contiguous);
+  auto indice_pairs_impl = torch_mlu::getMluTensorImpl(indice_pairs_contiguous);
+  auto workspace_impl = torch_mlu::getMluTensorImpl(workspace);
+
+  auto features_ptr = features.impl->cnnlMalloc();
+  auto filters_ptr = filters.impl->cnnlMalloc();
+  auto indice_pairs_ptr = indice_pairs_impl->cnnlMalloc();
+  auto workspace_ptr = workspace_impl->cnnlMalloc();
+
+  //  outputs
+  auto output_impl = torch_mlu::getMluTensorImpl(output);
+  auto output_ptr = output_impl->cnnlMalloc();                                                                                                                                                               
+  mluOpIndiceConvolutionForward(
+      handle, features_desc.desc(), features_ptr, filtes_desc.desc(), filters_ptr,
+      indice_pairs_desc.desc(), indice_pairs_ptr, indice_num, _inverse, _subM,
+      workspace_ptr, workspace_size, output_desc.desc(), output_ptr);
 
   std::cout << "IndiceConvForwardMLUKernelLauncher finish." << std::endl;
   return output;
