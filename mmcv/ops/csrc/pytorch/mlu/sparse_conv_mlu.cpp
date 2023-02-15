@@ -53,9 +53,10 @@ torch::Tensor IndiceConvForwardMLUKernelLauncher(
     torch::Tensor indiceNum, int64_t numActOut, int64_t _inverse,
     int64_t _subM) {
   std::cout << "IndiceConvForwardMLUKernelLauncher start." << std::endl;
-  auto indice_num_cpu = indiceNum.to({torch::kcpu});
+  auto indice_num_cpu = indiceNum.to({torch::kCPU});
   auto indice_num_cpu_64 = indice_num_cpu.data_ptr<int>();
   int indice_num_len = indiceNum.numel();
+  int64_t indice_num[indice_num_len];
   for (int i = 0; i < indice_num_len; ++i) {
     indice_num[i] = (int64_t)(((int *)indice_num_cpu_64)[i]);
     std::cout << "indice_num_cpu_64-" << i << " "
@@ -112,20 +113,19 @@ torch::Tensor IndiceConvForwardMLUKernelLauncher(
   auto handle = mluOpGetCurrentHandle();
   size_t workspace_size = 0;
   mluOpGetIndiceConvolutionForwardWorkspaceSize(
-      handle, features_desc(), filters_desc(), indice_pairs_desc.desc(),
-      output_desc.desc(), indice_num, indice_num, inverse,
-      &workspace_size);
+      handle, features_desc.desc(), filters_desc.desc(), indice_pairs_desc.desc(),
+      output_desc.desc(), indice_num, numActOut, _inverse, _subM, &workspace_size);
 
   auto workspace =
-      at::empty(workspace_size, features.option().dtype(at::kByte));
+      at::empty(workspace_size, features.options().dtype(at::kByte));
 
   auto features_impl = torch_mlu::getMluTensorImpl(features_contiguous);
   auto filters_impl = torch_mlu::getMluTensorImpl(filters_contiguous);
   auto indice_pairs_impl = torch_mlu::getMluTensorImpl(indice_pairs_contiguous);
   auto workspace_impl = torch_mlu::getMluTensorImpl(workspace);
 
-  auto features_ptr = features.impl->cnnlMalloc();
-  auto filters_ptr = filters.impl->cnnlMalloc();
+  auto features_ptr = features_impl->cnnlMalloc();
+  auto filters_ptr = filters_impl->cnnlMalloc();
   auto indice_pairs_ptr = indice_pairs_impl->cnnlMalloc();
   auto workspace_ptr = workspace_impl->cnnlMalloc();
 
@@ -133,8 +133,8 @@ torch::Tensor IndiceConvForwardMLUKernelLauncher(
   auto output_impl = torch_mlu::getMluTensorImpl(output);
   auto output_ptr = output_impl->cnnlMalloc();                                                                                                                                                               
   mluOpIndiceConvolutionForward(
-      handle, features_desc.desc(), features_ptr, filtes_desc.desc(), filters_ptr,
-      indice_pairs_desc.desc(), indice_pairs_ptr, indice_num, _inverse, _subM,
+      handle, features_desc.desc(), features_ptr, filters_desc.desc(), filters_ptr,
+      indice_pairs_desc.desc(), indice_pairs_ptr, indice_num, numActOut, _inverse, _subM,
       workspace_ptr, workspace_size, output_desc.desc(), output_ptr);
 
   std::cout << "IndiceConvForwardMLUKernelLauncher finish." << std::endl;

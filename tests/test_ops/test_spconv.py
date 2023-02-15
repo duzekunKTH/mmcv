@@ -184,6 +184,8 @@ def test_indice_conv():
                         [[0,-1],
                          [6,-1]],
                         [[0,-1],
+                         [5,-1]],
+                        [[0,-1],
                          [4,-1]],
                         [[0,-1],
                          [3,-1]],
@@ -199,9 +201,10 @@ def test_indice_conv():
     indice_num = torch.tensor([2,1,1,1,1,1,1,1], dtype=torch.int32).mlu()
     numactout = 8
     inverse = 0
-    sub_m = 1
+    sub_m = 0
 
     print(indice_num)
+    print(inverse)
     output = ext_module.indice_conv_forward(
         features,
         filters,
